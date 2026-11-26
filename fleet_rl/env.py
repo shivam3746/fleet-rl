@@ -1,5 +1,6 @@
-"""Gymnasium interface for fleet repositioning with Hungarian dispatch."""
+"""Gymnasium interface for fleet repositioning."""
 
+from collections.abc import Callable, Mapping
 from math import isfinite
 
 import gymnasium as gym
@@ -41,6 +42,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
         shift_minutes: int = 30,
         hotspot_share: float = 0.85,
         expiry_penalty: float | None = None,
+        dispatcher: Callable[[FleetSimulation], Mapping[int, int]] = hungarian_assignments,
     ) -> None:
         super().__init__()
         if fleet_size < 0 or arrival_cutoff < 1:
@@ -52,6 +54,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
             raise ValueError("Expiry penalty must be finite and nonnegative")
 
         self.city = GridCity() if city is None else city
+        self._dispatcher = dispatcher
         self._fleet_size = fleet_size
         self._demand_settings = dict(
             fleet_size=fleet_size,
@@ -94,7 +97,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
             raise ValueError("Trace must match the environment's fleet size and have a positive cutoff")
 
         sim = FleetSimulation(self.city, trace.initial_zones, trace.requests, trace.arrival_cutoff)
-        self._initial_expiries = sim.dispatch(hungarian_assignments(sim))
+        self._initial_expiries = sim.dispatch(self._dispatcher(sim))
         self._simulation = sim
         self._waiting_minutes = 0
         self._pickup_travel_minutes = 0
@@ -121,7 +124,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
                 masked_actions += 1
 
         counts = sim.advance(moves)
-        expiries = sim.dispatch(hungarian_assignments(sim))
+        expiries = sim.dispatch(self._dispatcher(sim))
         # A scripted zero-patience request can expire at reset, which has no reward.
         expiries += self._initial_expiries
         self._initial_expiries = 0
@@ -194,6 +197,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
             "service_rate": served / requests if requests else None,
             "mean_pickup_wait": float(np.mean(pickup_waits)) if served else None,
             "p90_pickup_wait": float(np.percentile(pickup_waits, 90)) if served else None,
+            "pickup_waits": tuple(pickup_waits),
             "waiting_passenger_minutes": self._waiting_minutes,
             "pickup_travel_minutes": self._pickup_travel_minutes,
             "reposition_travel_minutes": self._reposition_travel_minutes,

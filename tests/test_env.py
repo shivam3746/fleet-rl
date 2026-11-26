@@ -61,6 +61,7 @@ class FleetDispatchEnvTests(unittest.TestCase):
             "service_rate": 2 / 3,
             "mean_pickup_wait": 1.5,
             "p90_pickup_wait": 1.9,
+            "pickup_waits": (1, 2),
             "waiting_passenger_minutes": 5,
             "pickup_travel_minutes": 3,
             "reposition_travel_minutes": 0,

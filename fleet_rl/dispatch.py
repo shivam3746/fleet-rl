@@ -6,6 +6,33 @@ from scipy.optimize import linear_sum_assignment
 from .simulation import FleetSimulation
 
 
+def greedy_assignments(simulation: FleetSimulation) -> dict[int, int]:
+    """Visit requests oldest first and give each the nearest available vehicle."""
+    idle_vehicles = {
+        vehicle_id: vehicle.zone
+        for vehicle_id, vehicle in enumerate(simulation.vehicles)
+        if vehicle.leg is None
+    }
+    waiting_requests = sorted(
+        (state.request.arrival_minute, request_id)
+        for request_id, state in simulation.pending_requests.items()
+        if state.assigned_vehicle is None
+    )
+    assignments = {}
+    for _, request_id in waiting_requests:
+        if not idle_vehicles:
+            break
+        request = simulation.pending_requests[request_id].request
+        pickup_minutes, vehicle_id = min(
+            (simulation.city.travel_minutes(zone, request.origin), vehicle_id)
+            for vehicle_id, zone in idle_vehicles.items()
+        )
+        if simulation.minute + pickup_minutes <= request.pickup_deadline:
+            assignments[vehicle_id] = request_id
+            del idle_vehicles[vehicle_id]
+    return assignments
+
+
 def hungarian_assignments(simulation: FleetSimulation) -> dict[int, int]:
     """Maximize feasible assignments, then minimize their total pickup travel."""
     idle_vehicles = [
