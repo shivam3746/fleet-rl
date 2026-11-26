@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+/STEP_1.md
+/IMPLEMENTATION_PLAN.md
