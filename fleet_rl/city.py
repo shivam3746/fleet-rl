@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Protocol
 
 
 class Move(IntEnum):
@@ -10,6 +11,20 @@ class Move(IntEnum):
     SOUTH = 2
     EAST = 3
     WEST = 4
+
+
+class City(Protocol):
+    @property
+    def zone_count(self) -> int: ...
+
+    @property
+    def max_travel_minutes(self) -> int: ...
+
+    def destination(self, zone: int, move: Move) -> int | None: ...
+
+    def directed_edges(self) -> tuple[tuple[int, int], ...]: ...
+
+    def travel_minutes(self, origin: int, destination: int) -> int: ...
 
 
 _OFFSETS = {
@@ -35,6 +50,10 @@ class GridCity:
     @property
     def zone_count(self) -> int:
         return self.rows * self.columns
+
+    @property
+    def max_travel_minutes(self) -> int:
+        return self.rows + self.columns - 2
 
     def destination(self, zone: int, move: Move) -> int | None:
         """Return the destination zone, or None if the move leaves the grid."""

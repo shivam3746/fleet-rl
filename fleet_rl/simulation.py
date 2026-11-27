@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from types import MappingProxyType
 
-from .city import GridCity, Move
+from .city import City, Move
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,7 @@ class Request:
     origin: int
     destination: int
     pickup_deadline: int
+    trip_minutes: int | None = None
 
 
 @dataclass
@@ -63,7 +64,7 @@ class FleetSimulation:
 
     def __init__(
         self,
-        city: GridCity,
+        city: City,
         initial_zones: Iterable[int],
         requests: Iterable[Request],
         arrival_cutoff: int,
@@ -83,6 +84,8 @@ class FleetSimulation:
                 raise ValueError(f"Request {request_id} arrives outside the demand horizon")
             if request.pickup_deadline < request.arrival_minute:
                 raise ValueError(f"Request {request_id} has a deadline before its arrival")
+            if request.trip_minutes is not None and request.trip_minutes < 1:
+                raise ValueError(f"Request {request_id} has a nonpositive passenger trip duration")
             city.travel_minutes(request.origin, request.destination)
             self._arrivals.setdefault(request.arrival_minute, []).append((request_id, request))
 
@@ -145,17 +148,23 @@ class FleetSimulation:
             vehicle = self._idle_vehicle(vehicle_id)
             destination = self.city.destination(vehicle.zone, move)
             if destination is None:
-                raise ValueError(f"Vehicle {vehicle_id}'s move leaves the grid")
+                raise ValueError(f"Vehicle {vehicle_id}'s move is unavailable from zone {vehicle.zone}")
             if destination != vehicle.zone:
-                repositioning.append((vehicle, destination))
+                arrival = self.minute + self.city.travel_minutes(vehicle.zone, destination)
+                repositioning.append((vehicle, Leg(LegKind.REPOSITION, destination, arrival)))
+
+        for vehicle, leg in repositioning:
+            vehicle.leg = leg
 
         pickup_minutes = sum(
             vehicle.leg is not None and vehicle.leg.kind is LegKind.PICKUP
             for vehicle in self.vehicles
         )
-        counts = MinuteCounts(len(self._pending), pickup_minutes, len(repositioning))
-        for vehicle, destination in repositioning:
-            vehicle.leg = Leg(LegKind.REPOSITION, destination, self.minute + 1)
+        reposition_minutes = sum(
+            vehicle.leg is not None and vehicle.leg.kind is LegKind.REPOSITION
+            for vehicle in self.vehicles
+        )
+        counts = MinuteCounts(len(self._pending), pickup_minutes, reposition_minutes)
 
         self.minute += 1
         for vehicle in self.vehicles:
@@ -184,10 +193,15 @@ class FleetSimulation:
             raise ValueError(f"Vehicle {vehicle_id} is already traveling")
         return vehicle
 
+    def passenger_minutes(self, request: Request) -> int:
+        if request.trip_minutes is not None:
+            return request.trip_minutes
+        return self.city.travel_minutes(request.origin, request.destination)
+
     def _pick_up(self, vehicle: Vehicle, request_id: int) -> None:
         state = self._pending.pop(request_id)
         state.picked_up_at = self.minute
         destination = state.request.destination
-        travel_minutes = self.city.travel_minutes(vehicle.zone, destination)
+        travel_minutes = self.passenger_minutes(state.request)
         if travel_minutes:
             vehicle.leg = Leg(LegKind.PASSENGER, destination, self.minute + travel_minutes)

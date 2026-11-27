@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+/runs/
 
 /STEP_1.md
 /IMPLEMENTATION_PLAN.md

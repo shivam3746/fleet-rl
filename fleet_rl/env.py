@@ -8,7 +8,7 @@ import numpy as np
 from gymnasium import spaces
 from gymnasium.error import ResetNeeded
 
-from .city import GridCity, Move
+from .city import City, GridCity, Move
 from .demand import DemandTrace, generate_trace
 from .dispatch import hungarian_assignments
 from .simulation import FleetSimulation
@@ -33,7 +33,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
 
     def __init__(
         self,
-        city: GridCity | None = None,
+        city: City | None = None,
         *,
         fleet_size: int = 20,
         arrival_cutoff: int = 120,
@@ -89,6 +89,8 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
         super().reset(seed=seed)
         trace = None if options is None else options.get("trace")
         if trace is None:
+            if not isinstance(self.city, GridCity):
+                raise ValueError("Provide a demand trace when resetting a non-grid city")
             trace_seed = int(self.np_random.integers(2**63)) if seed is None else seed
             trace = generate_trace(self.city, seed=trace_seed, **self._demand_settings)
         if not isinstance(trace, DemandTrace):
@@ -164,7 +166,7 @@ class FleetDispatchEnv(gym.Env[Observation, np.ndarray]):
             if leg.request_id is not None:
                 request = sim.requests[leg.request_id].request
                 idle_zone = request.destination
-                idle_minute += self.city.travel_minutes(leg.destination, idle_zone)
+                idle_minute += sim.passenger_minutes(request)
             if idle_minute - sim.minute <= 5:
                 zone_features[idle_zone, 3] += 1
 

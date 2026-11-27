@@ -8,7 +8,7 @@ from torch import Tensor, nn
 from torch.distributions import Categorical
 from torch_geometric.nn import SAGEConv
 
-from .city import GridCity, Move
+from .city import City, GridCity, Move
 from .env import ZONE_FEATURES
 
 PolicyObservation = Mapping[str, Tensor | np.ndarray]
@@ -16,10 +16,10 @@ _CLOCK_FEATURES = 2
 _ZONE_INPUT_SIZE = len(ZONE_FEATURES) + _CLOCK_FEATURES
 
 
-class _FleetPolicy(nn.Module):
+class FleetPolicy(nn.Module):
     """Share action scoring, masking, and value prediction across encoders."""
 
-    def __init__(self, city: GridCity, hidden_size: int) -> None:
+    def __init__(self, city: City, hidden_size: int) -> None:
         super().__init__()
         if hidden_size < 1:
             raise ValueError("Hidden size must be positive")
@@ -88,10 +88,10 @@ class _FleetPolicy(nn.Module):
         raise NotImplementedError
 
 
-class GraphFleetPolicy(_FleetPolicy):
+class GraphFleetPolicy(FleetPolicy):
     """Encode zone features with two layers of GraphSAGE message passing."""
 
-    def __init__(self, city: GridCity, hidden_size: int = 64) -> None:
+    def __init__(self, city: City, hidden_size: int = 64) -> None:
         super().__init__(city, hidden_size)
         edge_index = torch.tensor(city.directed_edges(), dtype=torch.long).reshape(-1, 2).T.contiguous()
         self.register_buffer("_edge_index", edge_index, persistent=False)
@@ -105,7 +105,7 @@ class GraphFleetPolicy(_FleetPolicy):
         return self.second_conv(zones, self._edge_index).relu()
 
 
-class MLPFleetPolicy(_FleetPolicy):
+class MLPFleetPolicy(FleetPolicy):
     """Encode the fixed grid with dense layers and shared per-zone processing."""
 
     def __init__(self, city: GridCity, hidden_size: int = 64) -> None:

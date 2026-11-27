@@ -1,15 +1,27 @@
 """Replay shared demand traces through the classical fleet policies."""
 
 import argparse
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 import numpy as np
 
-from .city import GridCity, Move
+from .city import City, GridCity, Move
 from .demand import DemandTrace, generate_trace
 from .dispatch import greedy_assignments, hungarian_assignments
-from .env import FleetDispatchEnv
+from .env import FleetDispatchEnv, Observation
+
+
+@dataclass(frozen=True)
+class EpisodeResult:
+    requests: int
+    pickup_waits: tuple[int, ...]
+    pickup_travel_minutes: int
+    reposition_travel_minutes: int
+
+    @property
+    def empty_travel_minutes(self) -> int:
+        return self.pickup_travel_minutes + self.reposition_travel_minutes
 
 
 @dataclass(frozen=True)
@@ -31,10 +43,39 @@ class BaselineResult:
         return self.pickup_travel_minutes + self.reposition_travel_minutes
 
 
-def evaluate_baselines(
-    city: GridCity, traces: Iterable[DemandTrace], *, reposition_seed: int = 0
-) -> list[BaselineResult]:
-    """Replay identical traces for each policy and pool waits over served requests."""
+def replay_episode(
+    env: FleetDispatchEnv, trace: DemandTrace, choose_action: Callable[[Observation], np.ndarray]
+) -> EpisodeResult:
+    observation, _ = env.reset(options={"trace": trace})
+    while True:
+        observation, _, terminated, _, info = env.step(choose_action(observation))
+        if info["masked_actions"]:
+            raise RuntimeError("The evaluated policy selected a masked action")
+        if terminated:
+            metrics = info["episode_metrics"]
+            return EpisodeResult(
+                metrics["requests"], metrics["pickup_waits"],
+                metrics["pickup_travel_minutes"], metrics["reposition_travel_minutes"],
+            )
+
+
+def summarize_episodes(name: str, episodes: list[EpisodeResult]) -> BaselineResult:
+    pickup_waits = [wait for episode in episodes for wait in episode.pickup_waits]
+    return BaselineResult(
+        policy=name,
+        requests=sum(episode.requests for episode in episodes),
+        served_requests=len(pickup_waits),
+        mean_pickup_wait=float(np.mean(pickup_waits)) if pickup_waits else None,
+        p90_pickup_wait=float(np.percentile(pickup_waits, 90)) if pickup_waits else None,
+        pickup_travel_minutes=sum(episode.pickup_travel_minutes for episode in episodes),
+        reposition_travel_minutes=sum(episode.reposition_travel_minutes for episode in episodes),
+    )
+
+
+def baseline_episodes(
+    city: City, traces: Iterable[DemandTrace], *, reposition_seed: int = 0
+) -> dict[str, list[EpisodeResult]]:
+    """Replay identical traces for every baseline and preserve episode order."""
     traces = tuple(traces)
     if not traces:
         raise ValueError("Provide at least one demand trace")
@@ -44,41 +85,32 @@ def evaluate_baselines(
         ("Hungarian (stay)", hungarian_assignments, False),
         ("Hungarian (random reposition)", hungarian_assignments, True),
     )
-    results = []
+    results = {}
     for name, dispatcher, random_reposition in policies:
-        requests = pickup_minutes = reposition_minutes = 0
-        pickup_waits = []
+        episodes = []
         for trace, episode_seed in zip(traces, episode_seeds):
             fleet_size = len(trace.initial_zones)
             env = FleetDispatchEnv(city, fleet_size=fleet_size, dispatcher=dispatcher)
-            observation, _ = env.reset(options={"trace": trace})
             stay = np.full(fleet_size, Move.STAY, dtype=np.int64)
             if random_reposition:
                 env.action_space.seed(int(episode_seed.generate_state(1, dtype=np.uint64)[0]))
 
-            terminated = False
-            while not terminated:
-                action = stay
+            def choose_action(observation: Observation) -> np.ndarray:
                 if random_reposition:
-                    action = env.action_space.sample(mask=tuple(observation["action_mask"]))
-                observation, _, terminated, _, info = env.step(action)
+                    return env.action_space.sample(mask=tuple(observation["action_mask"]))
+                return stay
 
-            metrics = info["episode_metrics"]
-            requests += metrics["requests"]
-            pickup_waits.extend(metrics["pickup_waits"])
-            pickup_minutes += metrics["pickup_travel_minutes"]
-            reposition_minutes += metrics["reposition_travel_minutes"]
-
-        results.append(BaselineResult(
-            policy=name,
-            requests=requests,
-            served_requests=len(pickup_waits),
-            mean_pickup_wait=float(np.mean(pickup_waits)) if pickup_waits else None,
-            p90_pickup_wait=float(np.percentile(pickup_waits, 90)) if pickup_waits else None,
-            pickup_travel_minutes=pickup_minutes,
-            reposition_travel_minutes=reposition_minutes,
-        ))
+            episodes.append(replay_episode(env, trace, choose_action))
+        results[name] = episodes
     return results
+
+
+def evaluate_baselines(
+    city: City, traces: Iterable[DemandTrace], *, reposition_seed: int = 0
+) -> list[BaselineResult]:
+    """Summarize baselines using pooled waits over served requests."""
+    results = baseline_episodes(city, traces, reposition_seed=reposition_seed)
+    return [summarize_episodes(name, episodes) for name, episodes in results.items()]
 
 
 def main() -> None:

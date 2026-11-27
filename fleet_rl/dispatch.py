@@ -51,18 +51,15 @@ def hungarian_assignments(simulation: FleetSimulation) -> dict[int, int]:
     vehicle_count = len(idle_vehicles)
     request_count = len(waiting_requests)
     city = simulation.city
-    diameter = city.travel_minutes(0, city.zone_count - 1)
-
-    # One dummy column per vehicle allows any number of vehicles to stay idle.
-    # Its cost exceeds the highest possible total travel cost of real matches.
-    idle_cost = min(vehicle_count, request_count) * diameter + 1
     costs = np.full((vehicle_count, request_count + vehicle_count), np.inf)
-    costs[:, request_count:] = idle_cost
     for row, (_, zone) in enumerate(idle_vehicles):
         for column, (_, request) in enumerate(waiting_requests):
             pickup_minutes = city.travel_minutes(zone, request.origin)
             if simulation.minute + pickup_minutes <= request.pickup_deadline:
                 costs[row, column] = pickup_minutes
+
+    # Each vehicle can stay idle. Its dummy cost dominates any real travel savings.
+    costs[:, request_count:] = min(vehicle_count, request_count) * city.max_travel_minutes + 1
 
     rows, columns = linear_sum_assignment(costs)
     return {
