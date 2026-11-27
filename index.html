@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Replay fleet dispatch and compare GraphSAGE with classical policies on shared demand traces.">
+  <meta name="fleetlab-mode" content="recorded">
+  <title>FleetLab · Dispatch Dashboard</title>
+  <link rel="stylesheet" href="./dashboard.css">
+  <script type="module" src="./dashboard.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><div><strong>FleetLab</strong><small>Dispatch research</small></div></div>
+      <nav aria-label="Dashboard">
+        <a href="#overview" data-page="overview" aria-current="page"><span aria-hidden="true">◫</span>Overview</a>
+        <a href="#replay" data-page="replay"><span aria-hidden="true">▷</span>Live replay</a>
+        <a href="#benchmarks" data-page="benchmarks"><span aria-hidden="true">▥</span>Benchmarks</a>
+        <a href="#training" data-page="training"><span aria-hidden="true">⌁</span>Training</a>
+      </nav>
+      <div class="sidebar-footer"><span class="system-dot" aria-hidden="true"></span><span id="simulation-source">Local simulation</span></div>
+    </aside>
+
+    <main id="main" class="workspace">
+      <div class="topbar"><span id="breadcrumb">Overview</span><span class="policy-label"><span aria-hidden="true"></span>GraphSAGE + PPO</span></div>
+
+      <section class="screen" id="page-overview" aria-labelledby="overview-title">
+        <div class="intro">
+          <div><h1 id="overview-title">Fleet dispatch overview</h1><p>Replay dispatch decisions and compare policies on shared demand traces.</p></div>
+          <a class="button primary" href="#replay">Open live replay</a>
+        </div>
+        <div class="section-label"><h2>Held-out performance</h2><span id="overview-context">50-zone synthetic grid</span></div>
+        <div class="metric-grid" id="overview-metrics" aria-live="polite"><p class="muted">Loading benchmark results…</p></div>
+        <div class="overview-grid">
+          <article class="card map-card">
+            <div class="panel-header"><div><h2>Fleet distribution</h2><p>Idle vehicles and passenger queues by zone</p></div><span class="tag" id="preview-minute">Loading replay</span></div>
+            <div id="preview-map" class="map-wrap"></div>
+            <div class="panel-footer"><span id="preview-context">50-zone synthetic replay</span><a class="text-link" href="#replay">Inspect replay</a></div>
+          </article>
+          <article class="card comparison-card">
+            <div class="panel-header"><div><h2>Service rate by policy</h2><p>50-zone held-out benchmark</p></div></div>
+            <div id="overview-bars" class="bar-wrap"></div>
+            <div class="panel-footer"><a class="text-link" href="#benchmarks">View benchmark details</a></div>
+          </article>
+        </div>
+        <article class="card environment-card">
+          <div class="panel-header"><div><h2>Across environments</h2><p>GraphSAGE service compared with Hungarian and random repositioning</p></div></div>
+          <div class="environment-grid" id="environment-results"></div>
+        </article>
+      </section>
+
+      <section class="screen" id="page-replay" aria-labelledby="replay-title" hidden>
+        <div class="intro"><div><h1 id="replay-title">Live replay</h1><p id="replay-description">Follow the trained policy one simulated minute at a time.</p></div><span class="tag" id="replay-state">Loading replay</span></div>
+        <div class="card controls">
+          <form id="replay-form" class="seed-form"><label for="seed">Demand seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="1007" required><button class="button secondary" type="submit">Reset replay</button></form>
+          <div class="step-buttons" aria-label="Replay controls"><button id="step-one" class="button secondary" type="button">Step +1</button><button id="step-five" class="button secondary" type="button">Step +5</button><button id="finish" class="button secondary" type="button">Finish replay</button><button id="play" class="button primary" type="button">Play</button></div>
+        </div>
+        <p id="replay-error" class="notice" role="alert" hidden></p>
+        <div class="metric-grid" id="replay-metrics" aria-live="polite"></div>
+        <div class="overview-grid replay-grid">
+          <article class="card map-card">
+            <div class="panel-header"><div><h2>Zone map</h2><p>Select a zone to inspect fleet availability and demand</p></div><span class="tag" id="live-minute"></span></div>
+            <div id="live-map" class="map-wrap"></div>
+            <div id="zone-detail" class="panel-footer zone-detail">Select a zone to view details.</div>
+          </article>
+          <article class="card decision-card">
+            <div class="panel-header"><div><h2>Latest decisions</h2><p>Dispatch assignments and policy moves</p></div></div>
+            <div id="decision-list" class="decision-list" aria-live="polite"></div>
+            <details class="disclosure"><summary>Read simulator evidence</summary><pre id="evidence"></pre></details>
+          </article>
+        </div>
+        <article class="card operator-card">
+          <div class="panel-header"><div><h2>Ask the local operator</h2><p>Ask for an explanation or compare a recorded benchmark.</p></div></div>
+          <form id="operator-form"><label class="sr-only" for="question">Question for the operator</label><input id="question" maxlength="600" placeholder="Why did the fleet move in the last minute?" required><button type="submit" class="button secondary">Ask operator</button></form>
+          <pre id="operator-answer" aria-live="polite" hidden></pre>
+        </article>
+      </section>
+
+      <section class="screen" id="page-benchmarks" aria-labelledby="benchmarks-title" hidden>
+        <div class="intro"><div><h1 id="benchmarks-title">Policy benchmarks</h1><p>Compare service, pickup wait, and empty travel on shared traces.</p></div></div>
+        <div class="segments" aria-label="Benchmark environment"><button type="button" data-suite="synthetic" aria-pressed="true">50-zone grid</button><button type="button" data-suite="transfer" aria-pressed="false">72-zone transfer</button><button type="button" data-suite="manhattan" aria-pressed="false">Manhattan</button></div>
+        <div id="suite-content"></div>
+      </section>
+
+      <section class="screen" id="page-training" aria-labelledby="training-title" hidden>
+        <div class="intro"><div><h1 id="training-title">PPO training</h1><p>Validation curves for GraphSAGE and the matched plain MLP.</p></div></div>
+        <div id="training-summary" class="metric-grid"></div>
+        <div class="chart-grid" id="training-charts"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
